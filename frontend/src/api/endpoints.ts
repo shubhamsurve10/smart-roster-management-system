@@ -1,0 +1,22 @@
+export const ENDPOINTS = {
+  login: "/auth/login",
+  pods: "/pods",
+  employees: "/employees",
+  brands: "/brands",
+  processes: "/processes",
+  assignments: "/assignments",
+  staffingRecommendations: "/assignments/staffing-recommendations",
+  weeklyOffRules: "/weekly-off-rules",
+  leaves: "/leaves",
+  holidays: "/holidays",
+  coverageOverrides: "/coverage-overrides",
+  rosterEntries: "/roster-entries",
+  rosters: "/rosters",
+  rosterGenerate: (id: string) => `/rosters/${id}/generate`,
+  rosterValidate: (id: string) => `/rosters/${id}/validate`,
+  rosterPublish: (id: string) => `/rosters/${id}/publish`,
+  rosterLeaveImpact: (id: string) => `/rosters/${id}/leave-impact`,
+  rosterViews: (id: string) => `/rosters/${id}/views`,
+  rosterExport: (id: string, view: "employees" | "coverage") =>
+    `/rosters/${id}/export?view=${view}`,
+} as const;

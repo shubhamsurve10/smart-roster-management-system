@@ -1,0 +1,222 @@
+--- a/src/routes/roster.tsx
++++ b/src/routes/roster.tsx
+@@ -1,7 +1,7 @@
+ import { createFileRoute } from "@tanstack/react-router";
+ import { useMemo, useState } from "react";
+ import { toast } from "sonner";
+-import { CheckCheck, Lock, Plus, Send, Sparkles, Trash2 } from "lucide-react";
++import { CheckCheck, Download, Lock, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+ import api, { getErrorMessage, idOf } from "@/api/axiosInstance";
+ import { ENDPOINTS } from "@/api/endpoints";
+ import { PageHeader } from "@/components/PageHeader";
+@@ -33,6 +33,9 @@
+   HOLIDAY: "H",
+   LEAVE: "L",
+   COMP_OFF: "CO",
++  UNASSIGNED: "UA",
++  NON_WORKING_DAY: "NWD",
++  NOT_SCHEDULED: "NS",
+ };
+ 
+ const CELL: Record<string, string> = {
+@@ -41,7 +44,17 @@
+   HOLIDAY: "bg-status-holiday text-status-holiday-foreground",
+   LEAVE: "bg-status-leave text-status-leave-foreground",
+   COMP_OFF: "bg-status-compoff text-status-compoff-foreground",
++  UNASSIGNED: "bg-muted text-muted-foreground",
++  NON_WORKING_DAY: "bg-muted text-muted-foreground",
++  NOT_SCHEDULED: "bg-muted text-muted-foreground",
+ };
++
++const DISPLAY_STATUSES = Array.from(new Set([
++  ...ROSTER_STATUSES,
++  "UNASSIGNED",
++  "NON_WORKING_DAY",
++  "NOT_SCHEDULED",
++]));
+ 
+ type View = "company" | "pod" | "brand" | "process" | "employee";
+ 
+@@ -85,6 +98,12 @@
+   } | null>(null);
+ 
+   const [toDelete, setToDelete] = useState(false);
++  const [impactEmployee, setImpactEmployee] = useState("");
++  const [impactStart, setImpactStart] = useState("");
++  const [impactEnd, setImpactEnd] = useState("");
++  const [impactType, setImpactType] = useState<"LEAVE" | "COMP_OFF">("LEAVE");
++  const [impactBusy, setImpactBusy] = useState(false);
++  const [impactResult, setImpactResult] = useState<any>(null);
+ 
+   const sorted = [...rosters.items].sort((a, b) =>
+     String(b.month).localeCompare(String(a.month))
+@@ -188,6 +207,59 @@
+     }
+ 
+     setToDelete(false);
++  }
++
++  async function exportRoster(view: "employees" | "coverage") {
++    if (!roster) return;
++
++    try {
++      const response = await api.get(ENDPOINTS.rosterExport(roster._id, view), {
++        responseType: "blob",
++      });
++      const blobUrl = window.URL.createObjectURL(
++        new Blob([response.data], { type: "text/csv;charset=utf-8" }),
++      );
++      const link = document.createElement("a");
++      link.href = blobUrl;
++      link.download = `roster-${roster.month}-${view}.csv`;
++      document.body.appendChild(link);
++      link.click();
++      link.remove();
++      window.URL.revokeObjectURL(blobUrl);
++      toast.success("CSV export downloaded");
++    } catch (error) {
++      toast.error(getErrorMessage(error));
++    }
++  }
++
++  async function previewLeaveImpact() {
++    if (!roster || !impactEmployee || !impactStart || !impactEnd) {
++      toast.error("Select an employee and both dates first.");
++      return;
++    }
++    if (impactEnd < impactStart) {
++      toast.error("End date must be on or after start date.");
++      return;
++    }
++
++    setImpactBusy(true);
++    setImpactResult(null);
++    try {
++      const response = await api.post(
++        ENDPOINTS.rosterLeaveImpact(roster._id),
++        {
++          employee: impactEmployee,
++          startDate: impactStart,
++          endDate: impactEnd,
++          type: impactType,
++        },
++      );
++      setImpactResult(response.data?.data ?? response.data);
++    } catch (error) {
++      toast.error(getErrorMessage(error));
++    } finally {
++      setImpactBusy(false);
++    }
+   }
+ 
+   return (
+@@ -298,6 +370,19 @@
+                 </Button>
+               </>
+             ) : null}
++
++            {(isAdmin || user?.role === "pod_lead") && (
++              <Button size="sm" variant="outline" onClick={() => exportRoster("employees")}>
++                <Download className="h-4 w-4" />
++                Employee CSV
++              </Button>
++            )}
++            {isAdmin && (
++              <Button size="sm" variant="outline" onClick={() => exportRoster("coverage")}>
++                <Download className="h-4 w-4" />
++                Coverage CSV
++              </Button>
++            )}
+           </div>
+         )}
+       </div>
+@@ -313,6 +398,71 @@
+         <div className="mb-4">
+           <RosterResult kind={result.kind} data={result.data} />
+         </div>
++      )}
++
++      {roster && isAdmin && roster.status !== "PUBLISHED" && (
++        <section className="mb-4 space-y-3 rounded-lg border border-border bg-card p-4 shadow-card">
++          <div>
++            <h3 className="font-semibold text-foreground">Preview leave impact</h3>
++            <p className="text-sm text-muted-foreground">
++              Check possible coverage gaps before creating or approving a leave.
++              This preview does not save a leave or change the roster.
++            </p>
++          </div>
++          <div className="flex flex-wrap items-end gap-3">
++            <label className="space-y-1.5">
++              <span className="block text-xs font-medium text-muted-foreground">Employee</span>
++              <select className="field min-w-48" value={impactEmployee} onChange={(e) => setImpactEmployee(e.target.value)}>
++                <option value="">Select employee</option>
++                {emps.items.filter((employee) => employee.active !== false).map((employee) => (
++                  <option key={employee._id} value={employee._id}>{employee.name}</option>
++                ))}
++              </select>
++            </label>
++            <label className="space-y-1.5">
++              <span className="block text-xs font-medium text-muted-foreground">Start date</span>
++              <input className="field" type="date" value={impactStart} onChange={(e) => setImpactStart(e.target.value)} />
++            </label>
++            <label className="space-y-1.5">
++              <span className="block text-xs font-medium text-muted-foreground">End date</span>
++              <input className="field" type="date" value={impactEnd} onChange={(e) => setImpactEnd(e.target.value)} />
++            </label>
++            <label className="space-y-1.5">
++              <span className="block text-xs font-medium text-muted-foreground">Type</span>
++              <select className="field" value={impactType} onChange={(e) => setImpactType(e.target.value as "LEAVE" | "COMP_OFF")}>
++                <option value="LEAVE">Leave</option>
++                <option value="COMP_OFF">Comp-off</option>
++              </select>
++            </label>
++            <Button onClick={previewLeaveImpact} disabled={impactBusy}>
++              {impactBusy ? "Checking…" : "Preview impact"}
++            </Button>
++          </div>
++          {impactResult && (
++            <div className="space-y-3 rounded-md border border-border p-3">
++              <p className="text-sm font-medium">{impactResult.message}</p>
++              <div className="flex flex-wrap gap-4 text-sm">
++                <span>Coverage gap: <strong>{impactResult.coverageGapCreated ? "Yes" : "No"}</strong></span>
++                <span>Affected brands: <strong>{impactResult.affectedBrands?.length ?? 0}</strong></span>
++                <span>Multiple brands affected: <strong>{impactResult.multiBrandImpact ? "Yes" : "No"}</strong></span>
++              </div>
++              {impactResult.replacements?.length > 0 && (
++                <div className="space-y-2">
++                  <h4 className="text-sm font-semibold">Coverage gaps and suggested replacements</h4>
++                  {impactResult.replacements.map((gap: any, index: number) => (
++                    <div key={`${gap.date}-${gap.process}-${index}`} className="rounded-md bg-muted/50 p-2 text-sm">
++                      <p className="font-medium">{gap.date} · {gap.brandName ?? "Unknown brand"} · {gap.processType ?? "Process"}</p>
++                      <p className="text-muted-foreground">Shortage: {gap.shortage ?? 0}</p>
++                      <p className="text-muted-foreground">
++                        Suggested cover: {gap.suggestions?.map((person: any) => person.employeeName ?? person.name ?? person.employee).join(", ") || "No replacement suggested"}
++                      </p>
++                    </div>
++                  ))}
++                </div>
++              )}
++            </div>
++          )}
++        </section>
+       )}
+ 
+       {rosters.loading ? (
+@@ -660,7 +810,7 @@
+         {sel(
+           "status",
+           "statuses",
+-          ROSTER_STATUSES.map((s) => ({
++          DISPLAY_STATUSES.map((s) => ({
+             value: s,
+             label: s.replace("_", " "),
+           }))
+@@ -668,7 +818,7 @@
+       </div>
+ 
+       <div className="flex flex-wrap gap-3 border-b border-border px-3 py-2 text-xs text-muted-foreground">
+-        {ROSTER_STATUSES.map((s) => (
++        {DISPLAY_STATUSES.map((s) => (
+           <span
+             key={s}
+             className="flex items-center gap-1.5"
