@@ -32,7 +32,7 @@ router.post(
   createWeeklyOffRule
 );
 
-router.put(
+router.patch(
   "/:id",
   protect,
   authorizeRoles("admin"),
