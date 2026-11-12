@@ -1,15 +1,10 @@
+
 import { useMemo, useState, type ReactNode } from "react";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import api, { getErrorMessage } from "@/api/axiosInstance";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState, ErrorState, Loading } from "@/components/States";
 import { PageHeader } from "@/components/PageHeader";
@@ -21,8 +16,7 @@ export type Option = { value: string; label: string };
 export type Field = {
   name: string;
   label: string;
-  type:
-    "text" | "email" | "password" | "number" | "select" | "checkbox" | "date";
+  type: "text" | "email" | "password" | "number" | "select" | "checkbox" | "date";
   options?: Option[];
   required?: boolean;
   placeholder?: string;
@@ -56,11 +50,10 @@ type Props = {
   toPayload: (form: any) => Record<string, unknown>;
   validate?: (form: any) => string | null;
   rowActions?: (row: Rec, reload: () => void) => ReactNode;
-  readActions?: (row: Rec, reload: () => void) => ReactNode;
+  readActions?: (row: Rec) => ReactNode;
   onChanged?: () => void;
   extraHeader?: ReactNode;
   canCreate?: boolean;
-  showRowActions?: boolean;
 };
 
 const PAGE = 20;
@@ -96,7 +89,7 @@ export function CrudPage(p: Props) {
           return !value || f.match(r, value);
         });
       }),
-    [items, q, fv, p],
+    [items, q, fv, p]
   );
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
@@ -113,7 +106,7 @@ export function CrudPage(p: Props) {
   };
 
   async function save() {
-    if (editing ? !writable : !canCreate) return;
+    if (editing ? !writable : !canCreate) return; 
 
     for (const f of p.fields) {
       if (
@@ -175,7 +168,9 @@ export function CrudPage(p: Props) {
     }
   }
 
-  const visibleFields = p.fields.filter((f) => !(editing && f.createOnly));
+  const visibleFields = p.fields.filter(
+    (f) => !(editing && f.createOnly)
+  );
 
   return (
     <>
@@ -238,11 +233,13 @@ export function CrudPage(p: Props) {
         ) : filtered.length === 0 ? (
           <EmptyState
             title={`No ${p.title.toLowerCase()} found`}
-            {...(items.length
-              ? { hint: "Try changing the filters." }
-              : writable
-                ? { hint: `Add your first ${p.singular.toLowerCase()}.` }
-                : {})}
+          {...(
+            items.length
+            ? { hint: "Try changing the filters." }
+            : writable
+            ? { hint: `Add your first ${p.singular.toLowerCase()}.` }
+            : {}
+            )}
           />
         ) : (
           <table className="data-table">
@@ -251,7 +248,7 @@ export function CrudPage(p: Props) {
                 {p.columns.map((c) => (
                   <th key={c.header}>{c.header}</th>
                 ))}
-                {(writable || p.readActions || p.showRowActions) && (
+                {(writable || p.readActions) && (
                   <th className="text-right">Actions</th>
                 )}
               </tr>
@@ -266,9 +263,9 @@ export function CrudPage(p: Props) {
                     </td>
                   ))}
 
-                  {(writable || p.readActions || p.showRowActions) && (
+                  {(writable || p.readActions) && (
                     <td className="whitespace-nowrap text-right">
-                      {p.readActions?.(r, refresh)}
+                      {p.readActions?.(r)}
 
                       {writable && (
                         <>
@@ -312,7 +309,9 @@ export function CrudPage(p: Props) {
           >
             Previous
           </Button>
+
           Page {page + 1} of {pages}
+
           <Button
             size="sm"
             variant="outline"
@@ -352,7 +351,10 @@ export function CrudPage(p: Props) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(undefined)}>
+            <Button
+              variant="outline"
+              onClick={() => setEditing(undefined)}
+            >
               Cancel
             </Button>
 
@@ -424,14 +426,18 @@ function FieldInput({
           type={f.type}
           value={value ?? ""}
           placeholder={f.placeholder}
-          autoComplete={f.type === "password" ? "new-password" : undefined}
+          autoComplete={
+            f.type === "password" ? "new-password" : undefined
+          }
           onChange={(e) => onChange(e.target.value)}
           min={f.type === "number" ? 0 : undefined}
         />
       )}
 
       {f.hint && (
-        <span className="block text-xs text-muted-foreground">{f.hint}</span>
+        <span className="block text-xs text-muted-foreground">
+          {f.hint}
+        </span>
       )}
     </label>
   );

@@ -14,7 +14,7 @@ import Holiday from "../models/Holiday.js";
 import CoverageOverride from "../models/CoverageOverride.js";
 import RosterEntry from "../models/RosterEntry.js";
 
-import { getMonthDates, addDays } from "../engine/dates.js";
+import { getMonthDates } from "../engine/dates.js";
 
 const str = (value) => (value === null || value === undefined ? null : String(value));
 
@@ -22,8 +22,6 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
   const dates = getMonthDates(month); // throws on invalid month
   const start = dates[0];
   const end = dates[dates.length - 1];
-  const priorStart = addDays(start, -6);
-  const priorEnd = addDays(start, -1);
 
   const [
     roster,
@@ -37,7 +35,6 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
     holidays,
     coverageOverrides,
     entries,
-    priorEntries,
   ] = await Promise.all([
     Roster.findOne({ month }).lean(),
     // All employees (including inactive) so entries for inactive people can be named.
@@ -46,7 +43,7 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
     Brand.find().select("_id name").lean(),
     Process.find().select("_id brand type calendarType minStaff").lean(),
     Assignment.find().select("_id employee process isPrimary").lean(),
-    WeeklyOffRule.find().select("_id employee weekday type updatedAt").sort({ updatedAt: -1, createdAt: -1 }).lean(),
+    WeeklyOffRule.find().select("_id employee weekday type").lean(),
     Leave.find({ status: "APPROVED", startDate: { $lte: end }, endDate: { $gte: start } })
       .select("_id employee startDate endDate type status")
       .lean(),
@@ -57,9 +54,8 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
       .select("_id process date weekday minStaff")
       .lean(),
     includeEntries
-      ? RosterEntry.find({ rosterMonth: month }).select("_id rosterMonth employee date status processes temporaryProcesses isManual").lean()
+      ? RosterEntry.find({ rosterMonth: month }).select("_id rosterMonth employee date status processes isManual").lean()
       : Promise.resolve([]),
-    RosterEntry.find({ date: { $gte: priorStart, $lte: priorEnd } }).select("employee date status").lean(),
   ]);
 
   return {
@@ -88,7 +84,7 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
       process: str(a.process),
       isPrimary: Boolean(a.isPrimary),
     })),
-    weeklyOffRules: weeklyOffRules.map((r) => ({ employee: str(r.employee), weekday: r.weekday, type: r.type, updatedAt: r.updatedAt })),
+    weeklyOffRules: weeklyOffRules.map((r) => ({ employee: str(r.employee), weekday: r.weekday, type: r.type })),
     leaves: leaves.map((l) => ({
       _id: str(l._id),
       employee: str(l.employee),
@@ -104,7 +100,6 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
       weekday: o.weekday ?? null,
       minStaff: o.minStaff,
     })),
-    priorEntries: priorEntries.map((entry) => ({ employee: str(entry.employee), date: entry.date, status: entry.status })),
     entries: entries.map((entry) => ({
       _id: str(entry._id),
       rosterMonth: entry.rosterMonth,
@@ -112,7 +107,6 @@ export const loadRosterInput = async (month, { includeEntries = true } = {}) => 
       date: entry.date,
       status: entry.status,
       processes: (entry.processes || []).map(str),
-      temporaryProcesses: (entry.temporaryProcesses || []).map(str),
       isManual: Boolean(entry.isManual),
     })),
   };

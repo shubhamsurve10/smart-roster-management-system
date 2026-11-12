@@ -18,19 +18,20 @@ export type CellTarget = {
   date: string;
   entry?: Rec;
   processId?: string;
-  processAssigned?: boolean;
 };
 
-const EDITABLE_STATUSES = Array.from(
-  new Set([
-    ...ROSTER_STATUSES,
-    "UNASSIGNED",
-    "NON_WORKING_DAY",
-    "NOT_SCHEDULED",
-  ]),
-);
+const EDITABLE_STATUSES = Array.from(new Set([
+  ...ROSTER_STATUSES,
+  "UNASSIGNED",
+  "NON_WORKING_DAY",
+  "NOT_SCHEDULED",
+]));
 
-type ProcessOption = { value: string; label: string; assigned: boolean };
+type ProcessOption = {
+  value: string;
+  label: string;
+  assigned: boolean;
+};
 
 export function EditEntryDialog({
   target,
@@ -47,7 +48,6 @@ export function EditEntryDialog({
 }) {
   const [status, setStatus] = useState("WORKING");
   const [processes, setProcesses] = useState<string[]>([]);
-  const [temporaryProcesses, setTemporaryProcesses] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -56,56 +56,27 @@ export function EditEntryDialog({
     setStatus(target.entry?.status ?? "WORKING");
 
     const existingProcesses = (target.entry?.processes ?? []).map(idOf);
-    const existingTemporary = (target.entry?.temporaryProcesses ?? []).map(
-      idOf,
+    setProcesses(
+      existingProcesses.length > 0
+        ? existingProcesses
+        : target.processId
+          ? [target.processId]
+          : [],
     );
-    setTemporaryProcesses(existingTemporary);
-    const permanentExisting = existingProcesses.filter(
-      (id: string) => !existingTemporary.includes(id),
-    );
-    if (permanentExisting.length || existingTemporary.length) {
-      const nextPermanent = [...permanentExisting];
-      const nextTemporary = [...existingTemporary];
-      if (
-        target.processId &&
-        !nextPermanent.includes(target.processId) &&
-        !nextTemporary.includes(target.processId)
-      ) {
-        if (target.processAssigned) nextPermanent.push(target.processId);
-        else nextTemporary.push(target.processId);
-      }
-      setProcesses(nextPermanent);
-      setTemporaryProcesses(nextTemporary);
-    } else if (target.processId) {
-      if (target.processAssigned) {
-        setProcesses([target.processId]);
-        setTemporaryProcesses([]);
-      } else {
-        setProcesses([]);
-        setTemporaryProcesses([target.processId]);
-      }
-    } else {
-      setProcesses([]);
-      setTemporaryProcesses([]);
-    }
   }, [target]);
 
   if (!target) return null;
 
-  const options = processOptions(target.employee._id);
-  const permanentOptions = options.filter((option) => option.assigned);
-  const temporaryOptions = options.filter((option) => !option.assigned);
+  // The backend rejects processes that are not assigned to this employee.
+  const options = processOptions(target.employee._id).filter(
+    (option) => option.assigned,
+  );
 
   async function save() {
     if (!target) return;
 
-    if (
-      status === "WORKING" &&
-      processes.length + temporaryProcesses.length === 0
-    ) {
-      toast.error(
-        "Select at least one permanent or temporary process for this day.",
-      );
+    if (status === "WORKING" && processes.length === 0) {
+      toast.error("Select at least one assigned process for a working day.");
       return;
     }
 
@@ -113,13 +84,15 @@ export function EditEntryDialog({
     const body = {
       status,
       processes: status === "WORKING" ? processes : [],
-      temporaryProcesses: status === "WORKING" ? temporaryProcesses : [],
       isManual: true,
     };
 
     try {
       if (target.entry) {
-        await api.patch(`${ENDPOINTS.rosterEntries}/${target.entry._id}`, body);
+        await api.patch(
+          `${ENDPOINTS.rosterEntries}/${target.entry._id}`,
+          body,
+        );
       } else {
         // RosterEntry.rosterMonth is YYYY-MM, not the Roster MongoDB ID.
         await api.post(ENDPOINTS.rosterEntries, {
@@ -167,68 +140,35 @@ export function EditEntryDialog({
         {status === "WORKING" && (
           <div className="space-y-1.5">
             <span className="text-sm font-medium text-foreground">
-              Work allocation for this date
+              Assigned processes
             </span>
             {options.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No process options available.
+              <p className="text-sm text-destructive">
+                This employee has no assigned processes. A WORKING entry cannot
+                be saved until an assignment exists.
               </p>
             ) : (
-              <div className="max-h-56 space-y-3 overflow-y-auto">
-                {permanentOptions.length > 0 && (
-                  <div>
-                    <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
-                      Permanent assignments
-                    </p>
-                    {permanentOptions.map((option) => (
-                      <label
-                        key={option.value}
-                        className="flex items-center gap-2 text-sm text-foreground"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-primary"
-                          checked={processes.includes(option.value)}
-                          onChange={(event) =>
-                            setProcesses((current) =>
-                              event.target.checked
-                                ? [...current, option.value]
-                                : current.filter((id) => id !== option.value),
-                            )
-                          }
-                        />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                )}
-                {temporaryOptions.length > 0 && (
-                  <div>
-                    <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
-                      Temporary — this date only
-                    </p>
-                    {temporaryOptions.map((option) => (
-                      <label
-                        key={option.value}
-                        className="flex items-center gap-2 text-sm text-foreground"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-primary"
-                          checked={temporaryProcesses.includes(option.value)}
-                          onChange={(event) =>
-                            setTemporaryProcesses((current) =>
-                              event.target.checked
-                                ? [...current, option.value]
-                                : current.filter((id) => id !== option.value),
-                            )
-                          }
-                        />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                )}
+              <div className="max-h-56 space-y-1 overflow-y-auto">
+                {options.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex items-center gap-2 text-sm text-foreground"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      checked={processes.includes(option.value)}
+                      onChange={(event) =>
+                        setProcesses((current) =>
+                          event.target.checked
+                            ? [...current, option.value]
+                            : current.filter((id) => id !== option.value),
+                        )
+                      }
+                    />
+                    {option.label}
+                  </label>
+                ))}
               </div>
             )}
           </div>
@@ -243,8 +183,7 @@ export function EditEntryDialog({
             disabled={
               saving ||
               (status === "WORKING" &&
-                (options.length === 0 ||
-                  processes.length + temporaryProcesses.length === 0))
+                (options.length === 0 || processes.length === 0))
             }
           >
             {saving ? "Saving…" : "Save"}

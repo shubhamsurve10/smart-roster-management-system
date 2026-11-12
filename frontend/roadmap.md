@@ -1,5 +1,0 @@
-- [x] Employees, Pods, Brands, Processes, Assignments, Rules pages (generic CRUD)
-- [x] Monthly roster: create, generate, grid, manual edit, validate, publish
-- [x] Login / auth context / settings
-- [ ] Username/password login and role-specific navigation, read-only lists and scoped roster views
-- [ ] Real-server login and permission verification (blocked: login path and backend enforcement contract not provided)

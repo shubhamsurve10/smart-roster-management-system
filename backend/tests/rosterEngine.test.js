@@ -47,7 +47,6 @@ const scenario = ({
   holidays = [],
   overrides = [],
   manual = [],
-  priorEntries = [],
   brands,
   pods = [{ _id: "POD1", name: "Pod One", lead: null }, { _id: "POD2", name: "Pod Two", lead: null }],
 } = {}) => ({
@@ -61,8 +60,7 @@ const scenario = ({
   leaves: leaves.map(([employee, startDate, endDate, type = "LEAVE", status = "APPROVED"]) => ({ employee, startDate, endDate, type, status })),
   holidays: holidays.map((date) => ({ date, name: `Holiday ${date}` })),
   coverageOverrides: overrides,
-  manualEntries: manual.map(([employee, date, status, processes = [], temporaryProcesses = []]) => ({ employee, date, status, processes, temporaryProcesses, isManual: true })),
-  priorEntries,
+  manualEntries: manual.map(([employee, date, status, processes = []]) => ({ employee, date, status, processes, isManual: true })),
 });
 
 const cell = (plan, employee, date) => plan._grid.get(employee)[plan._ctx.dateIndex.get(date)];
@@ -369,7 +367,7 @@ describe("weekly offs", () => {
     for (const sunday of SUNDAYS) assert.equal(status(plan, "E2", sunday), "WORKING");
   });
 
-  it("normalizes legacy duplicate FIXED rules to one fixed weekday and warns", () => {
+  it("two FIXED offs in one week add no extra generated off", () => {
     const plan = generateRosterPlan(
       scenario({
         employees: [emp("E1"), emp("E2")],
@@ -380,9 +378,8 @@ describe("weekly offs", () => {
     );
     for (const week of FULL_WEEKS) {
       assert.equal(generatedOffsInWeek(plan, "E1", week), 0);
-      assert.equal(offsInWeek(plan, "E1", week), 1);
+      assert.equal(offsInWeek(plan, "E1", week), 2);
     }
-    assert.equal(plan.warnings.filter((issue) => issue.code === "MULTIPLE_FIXED_WEEKLY_OFF_RULES").length, 1);
   });
 
   it("a FIXED off on a closed day is harmless", () => {
@@ -678,41 +675,6 @@ describe("manual entries", () => {
     assert.ok(first.entries.every((e) => !manualKeys.has(`${e.employee}|${e.date}`)));
     assert.equal(status(first, "E2", "2026-11-04"), "WEEKLY_OFF");
     assert.ok(working(first, "P1", "2026-11-03") >= 2);
-  });
-});
-
-
-
-describe("cross-month working streaks", () => {
-  it("uses the previous month's saved entries when repairing a streak at month start", () => {
-    const priorEntries = Array.from({ length: 6 }, (_, index) => ({ employee: "E1", date: addDays("2026-11-01", -(index + 1)), status: "WORKING" }));
-    const input = scenario({
-      employees: [emp("E1"), emp("E2")],
-      processes: [proc("P1", "B1", "ALL_365", 1)],
-      assign: [["E1", "P1"], ["E2", "P1"]],
-      priorEntries,
-    });
-    const plan = generateRosterPlan(input);
-    assert.equal(status(plan, "E1", "2026-11-01"), "WEEKLY_OFF");
-    const validation = validateRosterPlan({ ...input, entries: savedEntries(input, plan) });
-    assert.equal(vIssues(validation, "MAX_CONSECUTIVE_DAYS_EXCEEDED").length, 0);
-  });
-});
-
-describe("temporary date-specific coverage", () => {
-  it("counts a manual temporary process for one date without creating a permanent assignment", () => {
-    const input = scenario({
-      employees: [emp("E1"), emp("E2")],
-      processes: [proc("P1", "B1", "ALL_365", 1)],
-      assign: [["E1", "P1"]],
-      manual: [["E2", "2026-11-03", "WORKING", [], ["P1"]]],
-    });
-    const plan = generateRosterPlan(input);
-    assert.equal(working(plan, "P1", "2026-11-03"), 1);
-    assert.equal(status(plan, "E1", "2026-11-03"), "WEEKLY_OFF", "temporary cover lets the permanent assignee take the day off while keeping one-person minimum coverage");
-    assert.equal(input.assignments.some((a) => a.employee === "E2" && a.process === "P1"), false);
-    const validation = validateRosterPlan({ ...input, entries: savedEntries(input, plan) });
-    assert.equal(vIssues(validation, "UNAUTHORISED_PROCESS_ASSIGNMENT").length, 0);
   });
 });
 

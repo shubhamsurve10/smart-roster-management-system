@@ -1,15 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  CheckCheck,
-  Download,
-  Lock,
-  Plus,
-  Send,
-  Sparkles,
-  Trash2,
-} from "lucide-react";
+import { CheckCheck, Download, Lock, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import api, { getErrorMessage, idOf } from "@/api/axiosInstance";
 import { ENDPOINTS } from "@/api/endpoints";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,34 +9,19 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState, ErrorState, Loading } from "@/components/States";
 import { RosterResult } from "@/components/roster/RosterResult";
-import {
-  EditEntryDialog,
-  type CellTarget,
-} from "@/components/roster/EditEntryDialog";
+import { EditEntryDialog, type CellTarget } from "@/components/roster/EditEntryDialog";
 import { Button } from "@/components/ui/button";
 import { ROSTER_STATUSES } from "@/lib/options";
-import {
-  processLabel,
-  refLabel,
-  useList,
-  WEEKDAYS,
-  type Rec,
-} from "@/lib/resources";
+import { processLabel, refLabel, useList, WEEKDAYS, type Rec } from "@/lib/resources";
 import { useAuth } from "@/context/AuthContext";
 
 export const Route = createFileRoute("/roster")({
   head: () => ({
     meta: [
       { title: "Monthly Roster | Smart Roster" },
-      {
-        name: "description",
-        content: "Generate, edit, validate and publish monthly rosters.",
-      },
+      { name: "description", content: "Generate, edit, validate and publish monthly rosters." },
       { property: "og:title", content: "Monthly Roster | Smart Roster" },
-      {
-        property: "og:description",
-        content: "Generate, edit, validate and publish monthly rosters.",
-      },
+      { property: "og:description", content: "Generate, edit, validate and publish monthly rosters." },
     ],
   }),
   component: RosterPage,
@@ -72,14 +49,12 @@ const CELL: Record<string, string> = {
   NOT_SCHEDULED: "bg-muted text-muted-foreground",
 };
 
-const DISPLAY_STATUSES = Array.from(
-  new Set([
-    ...ROSTER_STATUSES,
-    "UNASSIGNED",
-    "NON_WORKING_DAY",
-    "NOT_SCHEDULED",
-  ]),
-);
+const DISPLAY_STATUSES = Array.from(new Set([
+  ...ROSTER_STATUSES,
+  "UNASSIGNED",
+  "NON_WORKING_DAY",
+  "NOT_SCHEDULED",
+]));
 
 type View = "company" | "pod" | "brand" | "process" | "employee";
 
@@ -103,27 +78,46 @@ function RosterPage() {
   const { user } = useAuth();
 
   const isAdmin = user?.role === "admin";
-  const canEditRoster = user?.role === "admin" || user?.role === "pod_lead";
+  const canEditRoster =
+    user?.role === "admin" || user?.role === "pod_lead";
 
   const isAgent = user?.role === "agent";
-  const canLoadDirectory = !isAgent;
+const canLoadDirectory = !isAgent;
 
-  const rosters = useList(ENDPOINTS.rosters);
+const rosters = useList(ENDPOINTS.rosters);
 
-  const emps = useList(ENDPOINTS.employees, undefined, canLoadDirectory);
+const emps = useList(
+  ENDPOINTS.employees,
+  undefined,
+  canLoadDirectory
+);
 
-  const pods = useList(ENDPOINTS.pods, undefined, canLoadDirectory);
+const pods = useList(
+  ENDPOINTS.pods,
+  undefined,
+  canLoadDirectory
+);
 
-  const brands = useList(ENDPOINTS.brands, undefined, canLoadDirectory);
+const brands = useList(
+  ENDPOINTS.brands,
+  undefined,
+  canLoadDirectory
+);
 
-  const procs = useList(ENDPOINTS.processes, undefined, canLoadDirectory);
+const procs = useList(
+  ENDPOINTS.processes,
+  undefined,
+  canLoadDirectory
+);
 
-  const assigns = useList(ENDPOINTS.assignments, undefined, canLoadDirectory);
+const assigns = useList(
+  ENDPOINTS.assignments,
+  undefined,
+  canLoadDirectory
+);  
 
   const [selectedId, setSelectedId] = useState("");
-  const [newMonth, setNewMonth] = useState(
-    new Date().toISOString().slice(0, 7),
-  );
+  const [newMonth, setNewMonth] = useState(new Date().toISOString().slice(0, 7));
   const [busy, setBusy] = useState<string>("");
 
   const [result, setResult] = useState<{
@@ -140,32 +134,35 @@ function RosterPage() {
   const [impactResult, setImpactResult] = useState<any>(null);
 
   const sorted = [...rosters.items].sort((a, b) =>
-    String(b.month).localeCompare(String(a.month)),
+    String(b.month).localeCompare(String(a.month))
   );
 
-  const roster = rosters.items.find((r) => r._id === selectedId) ?? sorted[0];
+  const roster =
+    rosters.items.find((r) => r._id === selectedId) ?? sorted[0];
 
-  const entries = useList(
+    const entries = useList(
     ENDPOINTS.rosterEntries,
-    roster ? { rosterMonth: roster.month } : undefined,
+    roster ? { rosterMonth: roster.month } : undefined
   );
 
   const agentEmployees = useMemo(() => {
-    if (!isAgent) return [];
+  if (!isAgent) return [];
 
-    const uniqueEmployees = new Map<string, Rec>();
+  const uniqueEmployees = new Map<string, Rec>();
 
-    for (const entry of entries.items) {
-      const employee =
-        typeof entry.employee === "object" ? entry.employee : null;
+  for (const entry of entries.items) {
+    const employee =
+      typeof entry.employee === "object"
+        ? entry.employee
+        : null;
 
-      if (employee?._id) {
-        uniqueEmployees.set(employee._id, employee);
-      }
+    if (employee?._id) {
+      uniqueEmployees.set(employee._id, employee);
     }
+  }
 
-    return Array.from(uniqueEmployees.values());
-  }, [isAgent, entries.items]);
+  return Array.from(uniqueEmployees.values());
+}, [isAgent, entries.items]);
 
   const published = roster?.status === "PUBLISHED";
 
@@ -191,7 +188,7 @@ function RosterPage() {
           ? "Roster generated"
           : kind === "validate"
             ? "Validation finished"
-            : "Roster published",
+            : "Roster published"
       );
 
       await Promise.all([entries.reload(), rosters.reload()]);
@@ -295,12 +292,15 @@ function RosterPage() {
     setImpactBusy(true);
     setImpactResult(null);
     try {
-      const response = await api.post(ENDPOINTS.rosterLeaveImpact(roster._id), {
-        employee: impactEmployee,
-        startDate: impactStart,
-        endDate: impactEnd,
-        type: impactType,
-      });
+      const response = await api.post(
+        ENDPOINTS.rosterLeaveImpact(roster._id),
+        {
+          employee: impactEmployee,
+          startDate: impactStart,
+          endDate: impactEnd,
+          type: impactType,
+        },
+      );
       setImpactResult(response.data?.data ?? response.data);
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -330,7 +330,9 @@ function RosterPage() {
               setResult(null);
             }}
           >
-            {sorted.length === 0 && <option value="">No rosters yet</option>}
+            {sorted.length === 0 && (
+              <option value="">No rosters yet</option>
+            )}
 
             {sorted.map((r) => (
               <option key={r._id} value={r._id}>
@@ -379,7 +381,10 @@ function RosterPage() {
               </span>
             ) : isAdmin ? (
               <>
-                <Button onClick={() => run("generate")} disabled={busy !== ""}>
+                <Button
+                  onClick={() => run("generate")}
+                  disabled={busy !== ""}
+                >
                   <Sparkles className="h-4 w-4" />
                   {busy === "generate" ? "Generating…" : "Generate"}
                 </Button>
@@ -414,21 +419,13 @@ function RosterPage() {
             ) : null}
 
             {(isAdmin || user?.role === "pod_lead") && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => exportRoster("employees")}
-              >
+              <Button size="sm" variant="outline" onClick={() => exportRoster("employees")}>
                 <Download className="h-4 w-4" />
                 Employee CSV
               </Button>
             )}
             {isAdmin && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => exportRoster("coverage")}
-              >
+              <Button size="sm" variant="outline" onClick={() => exportRoster("coverage")}>
                 <Download className="h-4 w-4" />
                 Coverage CSV
               </Button>
@@ -438,7 +435,10 @@ function RosterPage() {
       </div>
 
       {rosters.error && (
-        <ErrorState message={rosters.error} onRetry={rosters.reload} />
+        <ErrorState
+          message={rosters.error}
+          onRetry={rosters.reload}
+        />
       )}
 
       {result && (
@@ -450,9 +450,7 @@ function RosterPage() {
       {roster && isAdmin && roster.status !== "PUBLISHED" && (
         <section className="mb-4 space-y-3 rounded-lg border border-border bg-card p-4 shadow-card">
           <div>
-            <h3 className="font-semibold text-foreground">
-              Preview leave impact
-            </h3>
+            <h3 className="font-semibold text-foreground">Preview leave impact</h3>
             <p className="text-sm text-muted-foreground">
               Check possible coverage gaps before creating or approving a leave.
               This preview does not save a leave or change the roster.
@@ -460,57 +458,25 @@ function RosterPage() {
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-muted-foreground">
-                Employee
-              </span>
-              <select
-                className="field min-w-48"
-                value={impactEmployee}
-                onChange={(e) => setImpactEmployee(e.target.value)}
-              >
+              <span className="block text-xs font-medium text-muted-foreground">Employee</span>
+              <select className="field min-w-48" value={impactEmployee} onChange={(e) => setImpactEmployee(e.target.value)}>
                 <option value="">Select employee</option>
-                {emps.items
-                  .filter((employee) => employee.active !== false)
-                  .map((employee) => (
-                    <option key={employee._id} value={employee._id}>
-                      {employee.name}
-                    </option>
-                  ))}
+                {emps.items.filter((employee) => employee.active !== false).map((employee) => (
+                  <option key={employee._id} value={employee._id}>{employee.name}</option>
+                ))}
               </select>
             </label>
             <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-muted-foreground">
-                Start date
-              </span>
-              <input
-                className="field"
-                type="date"
-                value={impactStart}
-                onChange={(e) => setImpactStart(e.target.value)}
-              />
+              <span className="block text-xs font-medium text-muted-foreground">Start date</span>
+              <input className="field" type="date" value={impactStart} onChange={(e) => setImpactStart(e.target.value)} />
             </label>
             <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-muted-foreground">
-                End date
-              </span>
-              <input
-                className="field"
-                type="date"
-                value={impactEnd}
-                onChange={(e) => setImpactEnd(e.target.value)}
-              />
+              <span className="block text-xs font-medium text-muted-foreground">End date</span>
+              <input className="field" type="date" value={impactEnd} onChange={(e) => setImpactEnd(e.target.value)} />
             </label>
             <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-muted-foreground">
-                Type
-              </span>
-              <select
-                className="field"
-                value={impactType}
-                onChange={(e) =>
-                  setImpactType(e.target.value as "LEAVE" | "COMP_OFF")
-                }
-              >
+              <span className="block text-xs font-medium text-muted-foreground">Type</span>
+              <select className="field" value={impactType} onChange={(e) => setImpactType(e.target.value as "LEAVE" | "COMP_OFF")}>
                 <option value="LEAVE">Leave</option>
                 <option value="COMP_OFF">Comp-off</option>
               </select>
@@ -523,50 +489,19 @@ function RosterPage() {
             <div className="space-y-3 rounded-md border border-border p-3">
               <p className="text-sm font-medium">{impactResult.message}</p>
               <div className="flex flex-wrap gap-4 text-sm">
-                <span>
-                  Coverage gap:{" "}
-                  <strong>
-                    {impactResult.coverageGapCreated ? "Yes" : "No"}
-                  </strong>
-                </span>
-                <span>
-                  Affected brands:{" "}
-                  <strong>{impactResult.affectedBrands?.length ?? 0}</strong>
-                </span>
-                <span>
-                  Multiple brands affected:{" "}
-                  <strong>
-                    {impactResult.multiBrandImpact ? "Yes" : "No"}
-                  </strong>
-                </span>
+                <span>Coverage gap: <strong>{impactResult.coverageGapCreated ? "Yes" : "No"}</strong></span>
+                <span>Affected brands: <strong>{impactResult.affectedBrands?.length ?? 0}</strong></span>
+                <span>Multiple brands affected: <strong>{impactResult.multiBrandImpact ? "Yes" : "No"}</strong></span>
               </div>
               {impactResult.replacements?.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-sm font-semibold">
-                    Coverage gaps and suggested replacements
-                  </h4>
+                  <h4 className="text-sm font-semibold">Coverage gaps and suggested replacements</h4>
                   {impactResult.replacements.map((gap: any, index: number) => (
-                    <div
-                      key={`${gap.date}-${gap.process}-${index}`}
-                      className="rounded-md bg-muted/50 p-2 text-sm"
-                    >
-                      <p className="font-medium">
-                        {gap.date} · {gap.brandName ?? "Unknown brand"} ·{" "}
-                        {gap.processType ?? "Process"}
-                      </p>
+                    <div key={`${gap.date}-${gap.process}-${index}`} className="rounded-md bg-muted/50 p-2 text-sm">
+                      <p className="font-medium">{gap.date} · {gap.brandName ?? "Unknown brand"} · {gap.processType ?? "Process"}</p>
+                      <p className="text-muted-foreground">Shortage: {gap.shortage ?? 0}</p>
                       <p className="text-muted-foreground">
-                        Shortage: {gap.shortage ?? 0}
-                      </p>
-                      <p className="text-muted-foreground">
-                        Suggested cover:{" "}
-                        {gap.suggestions
-                          ?.map(
-                            (person: any) =>
-                              person.employeeName ??
-                              person.name ??
-                              person.employee,
-                          )
-                          .join(", ") || "No replacement suggested"}
+                        Suggested cover: {gap.suggestions?.map((person: any) => person.employeeName ?? person.name ?? person.employee).join(", ") || "No replacement suggested"}
                       </p>
                     </div>
                   ))}
@@ -648,7 +583,10 @@ function RosterGrid({
   isAgent: boolean;
   onSaved: () => void;
 }) {
-  const [view, setView] = useState<View>(isAgent ? "employee" : "company");
+
+  const [view, setView] = useState<View>(
+  isAgent ? "employee" : "company"
+);
 
   const [f, setF] = useState({
     pod: "",
@@ -666,55 +604,66 @@ function RosterGrid({
   const [loadingAvailable, setLoadingAvailable] = useState(false);
 
   async function loadAvailableEmployees() {
-    if (!selectedDate || !selectedProcess) {
-      toast.error("Select a date and process first");
-      return;
-    }
+  if (!selectedDate || !selectedProcess) {
+    toast.error("Select a date and process first");
+    return;
+  }
 
-    setLoadingAvailable(true);
-    setAvailableEmployees([]);
+  setLoadingAvailable(true);
+  setAvailableEmployees([]);
 
-    try {
-      const res = await api.get(ENDPOINTS.staffingRecommendations, {
+  try {
+    const res = await api.get(
+      ENDPOINTS.staffingRecommendations,
+      {
         params: {
           processId: selectedProcess,
           date: selectedDate,
         },
-      });
+      }
+    );
 
-      const responseData = res.data?.data ?? res.data;
+    const responseData = res.data?.data ?? res.data;
 
-      setAvailableEmployees(
-        Array.isArray(responseData?.recommendations)
-          ? responseData.recommendations
-          : [],
-      );
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    } finally {
-      setLoadingAvailable(false);
-    }
+    setAvailableEmployees(
+      Array.isArray(responseData?.recommendations)
+        ? responseData.recommendations
+        : []
+    );
+  } catch (error) {
+    toast.error(getErrorMessage(error));
+  } finally {
+    setLoadingAvailable(false);
   }
-
+}
+  
   const days = daysOf(String(roster.month));
 
-  const editable = canEditRoster && roster.status !== "PUBLISHED";
+  const editable =
+    canEditRoster && roster.status !== "PUBLISHED";
 
   const mine = useMemo(
     () =>
       entries.filter((e) => {
         const rm = e.rosterMonth;
 
-        return !rm || idOf(rm) === roster._id || rm === roster.month;
+        return (
+          !rm ||
+          idOf(rm) === roster._id ||
+          rm === roster.month
+        );
       }),
-    [entries, roster],
+    [entries, roster]
   );
 
   const byCell = useMemo(() => {
     const m = new Map<string, Rec>();
 
     for (const e of mine) {
-      m.set(`${idOf(e.employee)}|${String(e.date).slice(0, 10)}`, e);
+      m.set(
+        `${idOf(e.employee)}|${String(e.date).slice(0, 10)}`,
+        e
+      );
     }
 
     return m;
@@ -724,28 +673,29 @@ function RosterGrid({
     idOf(procs.find((p) => p._id === pid)?.brand);
 
   const empProcs = (eid: string) =>
-    assigns.filter((a) => idOf(a.employee) === eid).map((a) => idOf(a.process));
+    assigns
+      .filter((a) => idOf(a.employee) === eid)
+      .map((a) => idOf(a.process));
 
   const empEntries = (eid: string) =>
     mine.filter((e) => idOf(e.employee) === eid);
 
   const shortProc = (pid: string) => {
-    const p =
-      procs.find((x) => x._id === pid) ??
-      mine
-        .flatMap((e) => [
-          ...(e.processes ?? []),
-          ...(e.temporaryProcesses ?? []),
-        ])
-        .find((x: unknown) => idOf(x) === pid);
+  const p =
+    procs.find((x) => x._id === pid) ??
+    mine.flatMap((e) => e.processes ?? []).find(
+      (x: any) => idOf(x) === pid
+    );
 
-    if (!p) return "Unknown process";
+  if (!p) return "Unknown process";
 
-    const brandName =
-      typeof p.brand === "object" ? p.brand.name : refLabel(p.brand, brands);
+  const brandName =
+    typeof p.brand === "object"
+      ? p.brand.name
+      : refLabel(p.brand, brands);
 
-    return `${brandName || "Unknown brand"} · ${p.type || "Process"}`;
-  };
+  return `${brandName || "Unknown brand"} · ${p.type || "Process"}`;
+};
 
   const rows = emps.filter((e) => {
     if (f.pod && idOf(e.pod) !== f.pod) return false;
@@ -755,17 +705,23 @@ function RosterGrid({
     const ps = new Set([
       ...empProcs(e._id),
       ...empEntries(e._id).flatMap((x) =>
-        [...(x.processes ?? []), ...(x.temporaryProcesses ?? [])].map(idOf),
+        (x.processes ?? []).map(idOf)
       ),
     ]);
 
     if (f.process && !ps.has(f.process)) return false;
 
-    if (f.brand && ![...ps].some((p) => procBrand(p) === f.brand)) {
+    if (
+      f.brand &&
+      ![...ps].some((p) => procBrand(p) === f.brand)
+    ) {
       return false;
     }
 
-    if (f.status && !empEntries(e._id).some((x) => x.status === f.status)) {
+    if (
+      f.status &&
+      !empEntries(e._id).some((x) => x.status === f.status)
+    ) {
       return false;
     }
 
@@ -782,7 +738,10 @@ function RosterGrid({
     }
 
     if (view === "pod") {
-      return [...pods, { _id: "", name: "No pod" }]
+      return [
+        ...pods,
+        { _id: "", name: "No pod" },
+      ]
         .map((p) => ({
           key: p._id || "none",
           label: p.name,
@@ -797,7 +756,9 @@ function RosterGrid({
           key: b._id,
           label: b.name,
           rows: rows.filter((e) =>
-            empProcs(e._id).some((p) => procBrand(p) === b._id),
+            empProcs(e._id).some(
+              (p) => procBrand(p) === b._id
+            )
           ),
         }))
         .filter((g) => g.rows.length);
@@ -807,7 +768,9 @@ function RosterGrid({
       .map((p) => ({
         key: p._id,
         label: processLabel(p, procs, brands),
-        rows: rows.filter((e) => empProcs(e._id).includes(p._id)),
+        rows: rows.filter((e) =>
+          empProcs(e._id).includes(p._id)
+        ),
       }))
       .filter((g) => g.rows.length);
 
@@ -816,18 +779,22 @@ function RosterGrid({
 
   const staffOn = (day: string) =>
     mine.filter(
-      (e) => String(e.date).slice(0, 10) === day && e.status === "WORKING",
+      (e) =>
+        String(e.date).slice(0, 10) === day &&
+        e.status === "WORKING"
     ).length;
 
   const sel = (
     key: keyof typeof f,
     label: string,
-    opts: { value: string; label: string }[],
+    opts: { value: string; label: string }[]
   ) => (
     <select
       className="field w-auto"
       value={f[key]}
-      onChange={(e) => setF({ ...f, [key]: e.target.value })}
+      onChange={(e) =>
+        setF({ ...f, [key]: e.target.value })
+      }
     >
       <option value="">All {label}</option>
 
@@ -841,78 +808,91 @@ function RosterGrid({
 
   return (
     <div className="rounded-lg border border-border bg-card shadow-card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-        {!isAgent && (
-          <>
-            <div className="flex rounded-md border border-border p-0.5">
-              {(
-                ["company", "pod", "brand", "process", "employee"] as View[]
-              ).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`rounded px-3 py-1 text-sm capitalize ${
-                    view === v
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
+  <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
 
-            {sel(
+    {!isAgent && (
+      <>
+        <div className="flex rounded-md border border-border p-0.5">
+          {(
+            [
+              "company",
               "pod",
-              "pods",
-              pods.map((p) => ({
-                value: p._id,
-                label: p.name,
-              })),
-            )}
-
-            {sel(
-              "employee",
-              "employees",
-              emps.map((e) => ({
-                value: e._id,
-                label: e.name,
-              })),
-            )}
-
-            {sel(
               "brand",
-              "brands",
-              brands.map((b) => ({
-                value: b._id,
-                label: b.name,
-              })),
-            )}
-
-            {sel(
               "process",
-              "processes",
-              procs.map((p) => ({
-                value: p._id,
-                label: processLabel(p, procs, brands),
-              })),
-            )}
+              "employee",
+            ] as View[]
+          ).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`rounded px-3 py-1 text-sm capitalize ${
+                view === v
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
 
-            {sel(
-              "status",
-              "statuses",
-              DISPLAY_STATUSES.map((s) => ({
-                value: s,
-                label: s.replace("_", " "),
-              })),
-            )}
-          </>
+        {sel(
+          "pod",
+          "pods",
+          pods.map((p) => ({
+            value: p._id,
+            label: p.name,
+          }))
         )}
-      </div>
+
+        {sel(
+          "employee",
+          "employees",
+          emps.map((e) => ({
+            value: e._id,
+            label: e.name,
+          }))
+        )}
+
+        {sel(
+          "brand",
+          "brands",
+          brands.map((b) => ({
+            value: b._id,
+            label: b.name,
+          }))
+        )}
+
+        {sel(
+          "process",
+          "processes",
+          procs.map((p) => ({
+            value: p._id,
+            label: processLabel(p, procs, brands),
+          }))
+        )}
+
+        {sel(
+          "status",
+          "statuses",
+          DISPLAY_STATUSES.map((s) => ({
+            value: s,
+            label: s.replace("_", " "),
+          }))
+        )}
+      </>
+    )}
+
+  </div>
       <div className="flex flex-wrap gap-3 border-b border-border px-3 py-2 text-xs text-muted-foreground">
         {DISPLAY_STATUSES.map((s) => (
-          <span key={s} className="flex items-center gap-1.5">
-            <span className={`rounded px-1.5 py-0.5 font-semibold ${CELL[s]}`}>
+          <span
+            key={s}
+            className="flex items-center gap-1.5"
+          >
+            <span
+              className={`rounded px-1.5 py-0.5 font-semibold ${CELL[s]}`}
+            >
               {SHORT[s]}
             </span>
 
@@ -921,10 +901,13 @@ function RosterGrid({
         ))}
 
         <span className="ml-auto">
-          {editable ? "Click a cell to edit." : "Read-only roster."}
+          {editable
+            ? "Click a cell to edit."
+            : "Read-only roster."}
         </span>
       </div>
 
+      
       {editable && isAdmin && (
         <div className="border-b border-border p-4 space-y-3">
           <h3 className="font-semibold text-foreground">
@@ -933,7 +916,9 @@ function RosterGrid({
 
           <div className="flex flex-wrap items-end gap-3">
             <label className="space-y-1">
-              <span className="block text-xs text-muted-foreground">Date</span>
+              <span className="block text-xs text-muted-foreground">
+                Date
+              </span>
               <input
                 type="date"
                 className="field"
@@ -970,7 +955,9 @@ function RosterGrid({
 
             <Button
               onClick={loadAvailableEmployees}
-              disabled={loadingAvailable || !selectedDate || !selectedProcess}
+              disabled={
+                loadingAvailable || !selectedDate || !selectedProcess
+              }
             >
               {loadingAvailable ? "Checking…" : "Find employees"}
             </Button>
@@ -993,12 +980,9 @@ function RosterGrid({
                     </p>
 
                     <p className="text-xs text-muted-foreground">
-                      Permanent assignments: {item.assignmentCount}
+                      Assignments: {item.assignmentCount}
                       {" · "}
                       Consecutive working days: {item.consecutiveWorkDays}
-                      {item.alreadyWorking
-                        ? " · Has spare coverage in current work"
-                        : " · Free on this date"}
                     </p>
 
                     {item.preferredOff && (
@@ -1023,7 +1007,7 @@ function RosterGrid({
                       }
 
                       const entry = byCell.get(
-                        `${employee._id}|${selectedDate}`,
+                        `${employee._id}|${selectedDate}`
                       );
 
                       setTarget({
@@ -1031,9 +1015,6 @@ function RosterGrid({
                         date: selectedDate,
                         entry,
                         processId: selectedProcess,
-                        processAssigned: empProcs(employee._id).includes(
-                          selectedProcess,
-                        ),
                       });
                     }}
                   >
@@ -1049,8 +1030,7 @@ function RosterGrid({
             selectedProcess &&
             availableEmployees.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                No recommendations loaded. Click Find employees to check
-                availability.
+                No recommendations loaded. Click Find employees to check availability.
               </p>
             )}
         </div>
@@ -1062,7 +1042,7 @@ function RosterGrid({
         </div>
       )}
 
-      {loading ? (
+          {loading ? (
         <Loading label="Loading roster entries…" />
       ) : rows.length === 0 ? (
         <EmptyState
@@ -1082,7 +1062,9 @@ function RosterGrid({
                   <th
                     key={d.key}
                     className={`min-w-14 border-b border-border px-1 py-1 text-center font-medium ${
-                      d.wd === 0 ? "text-destructive" : "text-muted-foreground"
+                      d.wd === 0
+                        ? "text-destructive"
+                        : "text-muted-foreground"
                     }`}
                   >
                     <div>{d.day}</div>
@@ -1151,7 +1133,10 @@ function RosterGrid({
                 label: processLabel(p, procs, brands),
                 assigned: assigned.has(p._id),
               }))
-              .sort((a, b) => Number(b.assigned) - Number(a.assigned));
+              .sort(
+                (a, b) =>
+                  Number(b.assigned) - Number(a.assigned)
+              );
           }}
         />
       )}
@@ -1194,7 +1179,9 @@ function GroupRows({
       {rows.map((emp) => (
         <tr key={emp._id}>
           <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-1.5">
-            <div className="font-medium text-foreground">{emp.name}</div>
+            <div className="font-medium text-foreground">
+              {emp.name}
+            </div>
 
             <div className="text-muted-foreground">
               {refLabel(emp.pod, pods)}
@@ -1202,21 +1189,31 @@ function GroupRows({
           </td>
 
           {days.map((d) => {
-            const entry = byCell.get(`${emp._id}|${d.key}`);
+            const entry = byCell.get(
+              `${emp._id}|${d.key}`
+            );
 
             const s = entry?.status as string | undefined;
 
             return (
-              <td key={d.key} className="border-b border-border p-0.5">
+              <td
+                key={d.key}
+                className="border-b border-border p-0.5"
+              >
                 <button
                   disabled={!editable}
-                  onClick={() => onCell(emp, d.key, entry)}
+                  onClick={() =>
+                    onCell(emp, d.key, entry)
+                  }
                   title={
                     entry
                       ? `${s}${
-                          entry.processes?.length ||
-                          entry.temporaryProcesses?.length
-                            ? ` — ${[...(entry.processes ?? []).map((p: unknown) => shortProc(idOf(p))), ...(entry.temporaryProcesses ?? []).map((p: unknown) => `${shortProc(idOf(p))} (temporary)`)].join(", ")}`
+                          entry.processes?.length
+                            ? ` — ${entry.processes
+                                .map((p: unknown) =>
+                                  shortProc(idOf(p))
+                                )
+                                .join(", ")}`
                             : ""
                         }${entry.isManual ? " (manual)" : ""}`
                       : "No entry"
@@ -1226,41 +1223,39 @@ function GroupRows({
                       ? CELL[s]
                       : "border border-dashed border-border text-muted-foreground"
                   } ${
-                    editable ? "hover:ring-2 hover:ring-ring" : "cursor-default"
-                  } ${entry?.isManual ? "ring-1 ring-primary" : ""}`}
+                    editable
+                      ? "hover:ring-2 hover:ring-ring"
+                      : "cursor-default"
+                  } ${
+                    entry?.isManual
+                      ? "ring-1 ring-primary"
+                      : ""
+                  }`}
                 >
-                  <span className="font-semibold">{s ? SHORT[s] : "—"}</span>
+                  <span className="font-semibold">
+                    {s ? SHORT[s] : "—"}
+                  </span>
 
-                  {s === "WORKING" &&
-                    (entry?.processes?.length ?? 0) +
-                      (entry?.temporaryProcesses?.length ?? 0) >
-                      0 && (
-                      <span className="max-w-28 truncate px-0.5 text-[10px] leading-tight">
-                        {[
-                          ...(entry.processes ?? []).map((p: unknown) => ({
-                            process: p,
-                            temporary: false,
-                          })),
-                          ...(entry.temporaryProcesses ?? []).map(
-                            (p: unknown) => ({ process: p, temporary: true }),
-                          ),
-                        ]
-                          .map(({ process: p, temporary }) => {
-                            if (typeof p === "object" && p !== null) {
-                              const process = p as Rec;
-                              const brand =
-                                typeof process.brand === "object"
-                                  ? process.brand?.name
-                                  : "";
+                  { s === "WORKING" &&
+  entry?.processes?.length > 0 && (
+    <span className="max-w-28 truncate px-0.5 text-[10px] leading-tight">
+      {entry.processes
+        .map((p: unknown) => {
+          if (typeof p === "object" && p !== null) {
+            const process = p as Rec;
+            const brand =
+              typeof process.brand === "object"
+                ? process.brand?.name
+                : "";
 
-                              return `${brand || "Brand"} · ${process.type || "Process"}${temporary ? " (temp)" : ""}`;
-                            }
+            return `${brand || "Brand"} · ${process.type || "Process"}`;
+          }
 
-                            return `${shortProc(idOf(p))}${temporary ? " (temp)" : ""}`;
-                          })
-                          .join(", ")}
-                      </span>
-                    )}
+          return shortProc(idOf(p));
+        })
+        .join(", ")}
+    </span>
+)}
                 </button>
               </td>
             );
