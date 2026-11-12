@@ -7,6 +7,7 @@ import RosterEntry from "../models/RosterEntry.js";
 
 import {
   getEmployeeAvailability,
+  getRequiredStaff,
 } from "../services/rosterGenerationService.js";
 
 // Get all assignments
@@ -362,16 +363,18 @@ export const getStaffingRecommendations = async (req, res) => {
     }).populate("pod", "name");
 
     // Find employees who already have a roster entry on this date
-    const dateEntries = await RosterEntry.find({
-      date,
-    }).select("employee status");
-
-    const entryByEmployee = new Map(
-      dateEntries.map((entry) => [
-        entry.employee.toString(),
-        entry.status,
-      ])
-    );
+    const dateEntries = await RosterEntry.find({ date }).select("employee status processes temporaryProcesses");
+    const entryByEmployee = new Map(dateEntries.map((entry) => [entry.employee.toString(), entry]));
+    const processIdsOnDate = [...new Set(dateEntries.filter((entry) => entry.status === "WORKING").flatMap((entry) => [ ...(entry.processes || []), ...(entry.temporaryProcesses || []) ].map(String)))];
+    const dateProcesses = await Process.find({ _id: { $in: processIdsOnDate } }).lean();
+    const processById = new Map(dateProcesses.map((item) => [String(item._id), item]));
+    const workingCountByProcess = new Map();
+    for (const entry of dateEntries) {
+      if (entry.status !== "WORKING") continue;
+      for (const pid of new Set([...(entry.processes || []), ...(entry.temporaryProcesses || [])].map(String))) {
+        workingCountByProcess.set(pid, (workingCountByProcess.get(pid) || 0) + 1);
+      }
+    }
 
     const recommendations = [];
 
@@ -383,16 +386,24 @@ export const getStaffingRecommendations = async (req, res) => {
         continue;
       }
 
-      // Do not recommend someone already scheduled to work
-      const currentStatus = entryByEmployee.get(employeeId);
-
-      if (
-        currentStatus === "WORKING" ||
-        currentStatus === "LEAVE" ||
-        currentStatus === "COMP_OFF" ||
-        currentStatus === "HOLIDAY"
-      ) {
-        continue;
+      // A person already working can be borrowed only when every current process
+      // retains its required coverage after this person is shared.
+      const currentEntry = entryByEmployee.get(employeeId);
+      const currentStatus = currentEntry?.status;
+      if ([...(currentEntry?.processes || []), ...(currentEntry?.temporaryProcesses || [])].some((id) => String(id) === String(processId))) continue;
+      if (["WEEKLY_OFF", "LEAVE", "COMP_OFF", "HOLIDAY", "NON_WORKING_DAY"].includes(currentStatus)) continue;
+      if (currentStatus === "WORKING") {
+        const currentProcessIds = [...new Set([...(currentEntry.processes || []), ...(currentEntry.temporaryProcesses || [])].map(String))];
+        if (!currentProcessIds.length) continue;
+        let hasSpareCover = true;
+        for (const currentProcessId of currentProcessIds) {
+          const currentProcess = processById.get(currentProcessId) || await Process.findById(currentProcessId).lean();
+          if (!currentProcess) { hasSpareCover = false; break; }
+          const required = await getRequiredStaff(currentProcess, date);
+          const currentCount = workingCountByProcess.get(currentProcessId) || 0;
+          if (currentCount <= required) { hasSpareCover = false; break; }
+        }
+        if (!hasSpareCover) continue;
       }
 
       // Check leave, fixed weekly off, and preferred weekly off
@@ -451,20 +462,20 @@ export const getStaffingRecommendations = async (req, res) => {
         },
         assignmentCount,
         consecutiveWorkDays,
+        alreadyWorking: currentStatus === "WORKING",
         preferredOff: availability.preferredOff,
-        recommendedAssignmentType:
-          assignmentCount === 0 ? "PERMANENT" : "TEMPORARY",
+        // Staffing recommendations are date-specific; they never create a permanent Assignment.
+        recommendedAssignmentType: "TEMPORARY",
       });
     }
 
-    // Prefer employees with no existing assignments,
-    // then employees without a preferred off day on this date.
+    // Prefer people whose preferred off is not today, then people already
+    // working only where their current processes have spare coverage. Every
+    // recommendation is a date-specific temporary allocation.
     recommendations.sort((a, b) => {
-      if (a.assignmentCount !== b.assignmentCount) {
-        return a.assignmentCount - b.assignmentCount;
-      }
-
-      return Number(a.preferredOff) - Number(b.preferredOff);
+      if (a.preferredOff !== b.preferredOff) return Number(a.preferredOff) - Number(b.preferredOff);
+      if (a.alreadyWorking !== b.alreadyWorking) return Number(a.alreadyWorking) - Number(b.alreadyWorking);
+      return b.assignmentCount - a.assignmentCount;
     });
 
     return res.status(200).json({

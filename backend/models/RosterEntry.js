@@ -43,6 +43,10 @@ const rosterEntrySchema = new mongoose.Schema(
       },
     ],
 
+    // Processes temporarily allocated for this employee on this date only.
+    // These do not create or modify permanent Assignment documents.
+    temporaryProcesses: [{ type: mongoose.Schema.Types.ObjectId, ref: "Process" }],
+
     isManual: {
       type: Boolean,
       default: false,

@@ -1,4 +1,3 @@
-
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 
@@ -8,7 +7,13 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { CrudPage } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/StatusBadge";
-import { fmtDate, refLabel, toDateInput, useList } from "@/lib/resources";
+import {
+  fmtDate,
+  refLabel,
+  toDateInput,
+  useList,
+  type Rec,
+} from "@/lib/resources";
 
 export const Route = createFileRoute("/leaves")({
   head: () => ({
@@ -37,10 +42,11 @@ function LeavesPage() {
   const { user } = useAuth();
 
   const isAdmin = user?.role === "admin";
+  const isPodLead = user?.role === "pod_lead";
+  const canReview = isAdmin || isPodLead;
 
-  // Only admins need the employee directory.
-  // Agents and pod leads submit requests for themselves.
-  const emps = useList(ENDPOINTS.employees, undefined, isAdmin);
+  // Admin sees all employees; Pod Lead endpoint is already scoped to their pod.
+  const emps = useList(ENDPOINTS.employees, undefined, isAdmin || isPodLead);
 
   const empOpts = emps.items.map((e) => ({
     value: e._id,
@@ -125,16 +131,18 @@ function LeavesPage() {
         type: f.type,
       })}
       searchText={(r) =>
-        isAdmin ? refLabel(r.employee, emps.items) : `${r.type ?? ""}`
+        canReview
+          ? `${refLabel(r.employee, emps.items)} ${r.type ?? ""}`
+          : `${r.type ?? ""}`
       }
       filters={[
-        ...(isAdmin
+        ...(canReview
           ? [
               {
                 key: "employee",
                 label: "Employees",
                 options: empOpts,
-                match: (r: any, v: string) => idOf(r.employee) === v,
+                match: (r: Rec, v: string) => idOf(r.employee) === v,
               },
             ]
           : []),
@@ -142,15 +150,15 @@ function LeavesPage() {
           key: "status",
           label: "Statuses",
           options: STATUSES,
-          match: (r: any, v: string) => r.status === v,
+          match: (r: Rec, v: string) => r.status === v,
         },
       ]}
       columns={[
-        ...(isAdmin
+        ...(canReview
           ? [
               {
                 header: "Employee",
-                render: (r: any) => (
+                render: (r: Rec) => (
                   <span className="font-medium">
                     {refLabel(r.employee, emps.items)}
                   </span>
@@ -160,29 +168,27 @@ function LeavesPage() {
           : []),
         {
           header: "From",
-          render: (r: any) => fmtDate(r.startDate),
+          render: (r: Rec) => fmtDate(r.startDate),
         },
         {
           header: "To",
-          render: (r: any) => fmtDate(r.endDate),
+          render: (r: Rec) => fmtDate(r.endDate),
         },
         {
           header: "Type",
-          render: (r: any) => <StatusBadge value={r.type} />,
+          render: (r: Rec) => <StatusBadge value={r.type} />,
         },
         {
           header: "Status",
-          render: (r: any) => <StatusBadge value={r.status} />,
+          render: (r: Rec) => <StatusBadge value={r.status} />,
         },
       ]}
-      rowActions={(r, reload) =>
-        r.status === "PENDING" ? (
+      readActions={(r, reload) =>
+        canReview && r.status === "PENDING" ? (
           <div className="inline-flex items-center gap-2">
             <Button
               size="sm"
-              onClick={() =>
-                reviewRequest(r._id, "APPROVED", reload)
-              }
+              onClick={() => reviewRequest(r._id, "APPROVED", reload)}
             >
               Approve
             </Button>
@@ -190,15 +196,14 @@ function LeavesPage() {
             <Button
               size="sm"
               variant="destructive"
-              onClick={() =>
-                reviewRequest(r._id, "REJECTED", reload)
-              }
+              onClick={() => reviewRequest(r._id, "REJECTED", reload)}
             >
               Reject
             </Button>
           </div>
         ) : null
       }
+      showRowActions={canReview}
     />
   );
 }

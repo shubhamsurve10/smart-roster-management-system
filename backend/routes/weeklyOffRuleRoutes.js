@@ -1,49 +1,13 @@
-
 import express from "express";
-
-import {
-  getWeeklyOffRules,
-  createWeeklyOffRule,
-  updateWeeklyOffRule,
-  deleteWeeklyOffRule,
-} from "../controllers/weeklyOffRuleController.js";
-
-import {
-  protect,
-  authorizeRoles,
-} from "../middleware/authMiddleware.js";
-
+import { getWeeklyOffRules, createWeeklyOffRule, updateWeeklyOffRule, deleteWeeklyOffRule, setPreferredWeeklyOff } from "../controllers/weeklyOffRuleController.js";
+import { protect, authorizeRoles } from "../middleware/authMiddleware.js";
 const router = express.Router();
-
-// All roles can view rules.
-// Controller filters the results according to the user's role.
-router.get(
-  "/",
-  protect,
-  authorizeRoles("admin", "pod_lead", "agent"),
-  getWeeklyOffRules
-);
-
-// Only Admin can modify weekly-off rules
-router.post(
-  "/",
-  protect,
-  authorizeRoles("admin"),
-  createWeeklyOffRule
-);
-
-router.patch(
-  "/:id",
-  protect,
-  authorizeRoles("admin"),
-  updateWeeklyOffRule
-);
-
-router.delete(
-  "/:id",
-  protect,
-  authorizeRoles("admin"),
-  deleteWeeklyOffRule
-);
-
+router.use(protect);
+router.get("/", authorizeRoles("admin", "pod_lead", "agent"), getWeeklyOffRules);
+router.patch("/preferred", authorizeRoles("admin", "pod_lead", "agent"), setPreferredWeeklyOff);
+router.post("/", authorizeRoles("admin"), createWeeklyOffRule);
+// PATCH matches the frontend CrudPage update method; PUT retained for compatibility.
+router.patch("/:id", authorizeRoles("admin", "pod_lead", "agent"), updateWeeklyOffRule);
+router.put("/:id", authorizeRoles("admin", "pod_lead", "agent"), updateWeeklyOffRule);
+router.delete("/:id", authorizeRoles("admin", "pod_lead", "agent"), deleteWeeklyOffRule);
 export default router;

@@ -4,6 +4,10 @@ import RosterEntry from "../models/RosterEntry.js";
 import Roster from "../models/Roster.js";
 import Employee from "../models/Employee.js";
 import Assignment from "../models/Assignment.js";
+import Process from "../models/Process.js";
+import Leave from "../models/Leave.js";
+import WeeklyOffRule from "../models/WeeklyOffRule.js";
+import Holiday from "../models/Holiday.js";
 
 const validStatuses = [
   "WORKING",
@@ -93,6 +97,33 @@ const validateProcesses = async (employeeId, processes) => {
   return null;
 };
 
+// Temporary process allocation is deliberately separate from permanent Assignment records.
+const validateTemporaryProcesses = async (employeeId, temporaryProcesses, date, permanentProcesses = []) => {
+  if (!Array.isArray(temporaryProcesses)) return "Temporary processes must be an array.";
+  if (temporaryProcesses.some((id) => !mongoose.Types.ObjectId.isValid(id))) return "One or more temporary process IDs are invalid.";
+  const unique = [...new Set(temporaryProcesses.map(String))];
+  if (unique.length !== temporaryProcesses.length) return "Duplicate temporary process IDs are not allowed.";
+  if (unique.some((id) => permanentProcesses.map(String).includes(id))) return "A process cannot be both permanent and temporary on the same date.";
+  if (!unique.length) return null;
+
+  const [processes, approvedLeave, fixedOff] = await Promise.all([
+    Process.find({ _id: { $in: unique } }).select("_id calendarType").lean(),
+    Leave.exists({ employee: employeeId, status: "APPROVED", startDate: { $lte: date }, endDate: { $gte: date } }),
+    WeeklyOffRule.exists({ employee: employeeId, type: "FIXED", weekday: new Date(`${date}T00:00:00.000Z`).getUTCDay() }),
+  ]);
+  if (processes.length !== unique.length) return "One or more temporary processes do not exist.";
+  if (approvedLeave || fixedOff) return "An employee on approved leave or a fixed weekly off cannot receive temporary work.";
+  const holiday = await Holiday.exists({ date });
+  const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  for (const process of processes) {
+    const open = process.calendarType === "ALL_365" ||
+      (process.calendarType === "EXCEPT_HOLIDAYS" && !holiday) ||
+      (process.calendarType === "NO_SUN_NO_HOLIDAY" && weekday !== 0 && !holiday);
+    if (!open) return "A selected temporary process is closed on this date.";
+  }
+  return null;
+};
+
 // Get roster entries
 export const getRosterEntries = async (req, res) => {
   try {
@@ -133,6 +164,7 @@ export const getRosterEntries = async (req, res) => {
     // Admin: view all roster entries
     const entries = await RosterEntry.find(filter)
       .populate("employee", "name role pod")
+      .populate({ path: "temporaryProcesses", populate: { path: "brand", select: "name" } })
       .populate({
         path: "processes",
         populate: {
@@ -164,13 +196,11 @@ export const createRosterEntry = async (req, res) => {
       date,
       status,
       processes = [],
+      temporaryProcesses = [],
     } = req.body;
 
-    if (!Array.isArray(processes)) {
-      return res.status(400).json({
-        success: false,
-        message: "Processes must be an array.",
-      });
+    if (!Array.isArray(processes) || !Array.isArray(temporaryProcesses)) {
+      return res.status(400).json({ success: false, message: "Processes and temporaryProcesses must be arrays." });
     }
 
     if (!rosterMonth || !employee || !date || !status) {
@@ -208,14 +238,11 @@ export const createRosterEntry = async (req, res) => {
       });
     }
 
-    if (status === "WORKING" && processes.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "A working entry must have at least one assigned process.",
-      });
+    if (status === "WORKING" && processes.length + temporaryProcesses.length === 0) {
+      return res.status(400).json({ success: false, message: "A working entry must have at least one permanent or temporary process." });
     }
 
-    if (status !== "WORKING" && processes.length > 0) {
+    if (status !== "WORKING" && (processes.length > 0 || temporaryProcesses.length > 0)) {
       return res.status(400).json({
         success: false,
         message: "Non-working entries cannot have process allocations.",
@@ -266,12 +293,9 @@ export const createRosterEntry = async (req, res) => {
       processes
     );
 
-    if (processError) {
-      return res.status(400).json({
-        success: false,
-        message: processError,
-      });
-    }
+    if (processError) return res.status(400).json({ success: false, message: processError });
+    const temporaryError = await validateTemporaryProcesses(employee, temporaryProcesses, date, processes);
+    if (temporaryError) return res.status(400).json({ success: false, message: temporaryError });
 
     const entry = await RosterEntry.create({
       rosterMonth,
@@ -279,6 +303,7 @@ export const createRosterEntry = async (req, res) => {
       date,
       status,
       processes,
+      temporaryProcesses,
       isManual: true,
     });
 
@@ -306,7 +331,7 @@ export const createRosterEntry = async (req, res) => {
 export const updateRosterEntry = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, processes } = req.body;
+    const { status, processes, temporaryProcesses } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -353,9 +378,8 @@ export const updateRosterEntry = async (req, res) => {
 
     const updatedStatus = status ?? entry.status;
 
-    const updatedProcesses =
-      processes ??
-      (updatedStatus === "WORKING" ? entry.processes : []);
+    const updatedProcesses = processes ?? (updatedStatus === "WORKING" ? entry.processes : []);
+    const updatedTemporaryProcesses = temporaryProcesses ?? (updatedStatus === "WORKING" ? (entry.temporaryProcesses || []) : []);
 
     if (!validStatuses.includes(updatedStatus)) {
       return res.status(400).json({
@@ -364,16 +388,13 @@ export const updateRosterEntry = async (req, res) => {
       });
     }
 
-    if (!Array.isArray(updatedProcesses)) {
-      return res.status(400).json({
-        success: false,
-        message: "Processes must be an array.",
-      });
+    if (!Array.isArray(updatedProcesses) || !Array.isArray(updatedTemporaryProcesses)) {
+      return res.status(400).json({ success: false, message: "Processes and temporaryProcesses must be arrays." });
     }
 
     if (
       updatedStatus === "WORKING" &&
-      updatedProcesses.length === 0
+      updatedProcesses.length + updatedTemporaryProcesses.length === 0
     ) {
       return res.status(400).json({
         success: false,
@@ -383,7 +404,7 @@ export const updateRosterEntry = async (req, res) => {
 
     if (
       updatedStatus !== "WORKING" &&
-      updatedProcesses.length > 0
+      (updatedProcesses.length > 0 || updatedTemporaryProcesses.length > 0)
     ) {
       return res.status(400).json({
         success: false,
@@ -396,15 +417,13 @@ export const updateRosterEntry = async (req, res) => {
       updatedProcesses
     );
 
-    if (processError) {
-      return res.status(400).json({
-        success: false,
-        message: processError,
-      });
-    }
+    if (processError) return res.status(400).json({ success: false, message: processError });
+    const temporaryError = await validateTemporaryProcesses(entry.employee, updatedTemporaryProcesses, entry.date, updatedProcesses);
+    if (temporaryError) return res.status(400).json({ success: false, message: temporaryError });
 
     entry.status = updatedStatus;
     entry.processes = updatedProcesses;
+    entry.temporaryProcesses = updatedTemporaryProcesses;
     entry.isManual = true;
 
     await entry.save();

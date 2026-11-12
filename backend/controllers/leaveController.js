@@ -43,15 +43,13 @@ export const getLeaves = async (req, res) => {
   try {
     const filter = {};
 
-    if (req.user.role !== "admin") {
+    if (req.user.role === "agent") {
       const ownEmployeeId = req.user.employee || req.user.id;
-      if (!ownEmployeeId) {
-        return res.status(403).json({
-          success: false,
-          message: "Your account is not linked to an employee record",
-        });
-      }
+      if (!ownEmployeeId) return res.status(403).json({ success: false, message: "Your account is not linked to an employee record" });
       filter.employee = ownEmployeeId;
+    } else if (req.user.role === "pod_lead") {
+      if (!req.user.pod) return res.status(403).json({ success: false, message: "You are not assigned to a pod" });
+      filter.employee = { $in: await Employee.find({ pod: req.user.pod, active: true }).distinct("_id") };
     }
 
     const leaves = await Leave.find(filter)
@@ -249,7 +247,7 @@ export const updateLeave = async (req, res) => {
   }
 };
 
-// Admin-only review. A request can move from PENDING to APPROVED or REJECTED.
+// Admin or the employee's own Pod Lead can review a pending request.
 export const updateLeaveStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -269,6 +267,11 @@ export const updateLeaveStatus = async (req, res) => {
     const leave = await Leave.findById(id);
     if (!leave) {
       return res.status(404).json({ success: false, message: "Leave request not found" });
+    }
+
+    if (req.user.role === "pod_lead") {
+      const inPod = await Employee.exists({ _id: leave.employee, pod: req.user.pod, active: true });
+      if (!inPod) return res.status(403).json({ success: false, message: "You can only review leave requests from your own pod" });
     }
 
     if (leave.status !== "PENDING") {

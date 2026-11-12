@@ -12,7 +12,7 @@ import { protect, authorizeRoles } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Admin sees all requests; agents and pod leads see only their own requests.
+// Admin sees all requests, Pod Leads see their pod, Agents see their own.
 router.get(
   "/",
   protect,
@@ -37,11 +37,11 @@ router.put(
   updateLeave
 );
 
-// Only admin can approve or reject a pending request.
+// Admin and Pod Leads can review; controller enforces pod ownership.
 router.patch(
   "/:id/status",
   protect,
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "pod_lead"),
   updateLeaveStatus
 );
 

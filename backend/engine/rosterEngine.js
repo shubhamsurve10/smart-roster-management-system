@@ -227,6 +227,27 @@ export const buildContext = (input = {}) => {
     .sort(compareStrings);
   ctx.activeEmployeeSet = new Set(ctx.activeEmployeeIds);
 
+  // Consecutive-work limit includes the previous six calendar days, not just this month.
+  const priorStatusByEmployeeDate = new Map();
+  for (const entry of input.priorEntries || []) {
+    priorStatusByEmployeeDate.set(`${toId(entry.employee)}|${entry.date}`, entry.status);
+  }
+  ctx.priorWorkingRun = new Map();
+  ctx.priorWorkingRunStart = new Map();
+  ctx.priorRestDay = new Map();
+  for (const employeeId of ctx.activeEmployeeIds) {
+    let count = 0;
+    let cursor = addDays(dates[0], -1);
+    while (count < MAX_CONSECUTIVE_WORKING_DAYS && priorStatusByEmployeeDate.get(`${employeeId}|${cursor}`) === "WORKING") {
+      count += 1;
+      cursor = addDays(cursor, -1);
+    }
+    ctx.priorWorkingRun.set(employeeId, count);
+    if (count) ctx.priorWorkingRunStart.set(employeeId, addDays(dates[0], -count));
+    const priorDayStatus = priorStatusByEmployeeDate.get(`${employeeId}|${addDays(dates[0], -1)}`);
+    ctx.priorRestDay.set(employeeId, ["WEEKLY_OFF", "LEAVE", "COMP_OFF", "HOLIDAY", "NON_WORKING_DAY"].includes(priorDayStatus));
+  }
+
   ctx.employeeName = (id) => ctx.employeeMap.get(id)?.name || `Unknown employee (${id})`;
   ctx.podName = (podId) => (podId ? ctx.podMap.get(podId)?.name || null : null);
 
@@ -444,8 +465,15 @@ export const buildContext = (input = {}) => {
     }
     const rules = ctx.rulesByEmployee.get(employeeId);
     rules.ruleDays.add(weekday);
-    if (rule.type === "FIXED") rules.fixed.add(weekday);
-    else rules.preferred.add(weekday);
+    const target = rule.type === "FIXED" ? rules.fixed : rules.preferred;
+    if (target.size && !target.has(weekday)) {
+      dataWarnings.push(dataWarning(ctx, rule.type === "FIXED" ? "MULTIPLE_FIXED_WEEKLY_OFF_RULES" : "MULTIPLE_PREFERRED_WEEKLY_OFF_RULES", {
+        employee: employeeId,
+        message: `${ctx.employeeName(employeeId)} has multiple ${rule.type.toLowerCase()} weekly-off rules. Only the most recently updated rule (${WEEKDAY_NAMES[[...target][0]]}) is used; remove the duplicate rule.`,
+      }));
+      continue;
+    }
+    target.add(weekday);
   }
 
   ctx.isFixedOff = (employeeId, weekday) => Boolean(ctx.rulesByEmployee.get(employeeId)?.fixed.has(weekday));
@@ -816,7 +844,10 @@ const indexManualEntries = (ctx, manualEntries) => {
 // Which processes of a manual WORKING entry may count towards coverage.
 const countableManualProcesses = (ctx, employeeId, entry, index, reportStage) => {
   const date = ctx.dates[index];
-  const raw = uniqueSorted((entry.processes || []).map(toId).filter(Boolean));
+  const permanentRaw = (entry.processes || []).map(toId).filter(Boolean);
+  const temporaryRaw = (entry.temporaryProcesses || []).map(toId).filter(Boolean);
+  const raw = uniqueSorted([...permanentRaw, ...temporaryRaw]);
+  const temporarySet = new Set(temporaryRaw);
   const unavailable =
     ctx.leaveOn(employeeId, index) || (ctx.isFixedOff(employeeId, ctx.weekdays[index]) ? "FIXED_WEEKLY_OFF" : null);
   const counted = [];
@@ -824,7 +855,7 @@ const countableManualProcesses = (ctx, employeeId, entry, index, reportStage) =>
   for (const pid of raw) {
     let problem = null;
     if (!ctx.processMap.has(pid)) problem = "points to a process that no longer exists";
-    else if (!ctx.isAssigned(employeeId, pid)) problem = `includes ${processLabel(ctx, pid)}, which is not assigned to them`;
+    else if (!ctx.isAssigned(employeeId, pid) && !temporarySet.has(pid)) problem = `includes ${processLabel(ctx, pid)}, which is neither permanently assigned nor explicitly temporarily allocated`;
     else if (!ctx.operating.get(pid)[index]) problem = `includes ${processLabel(ctx, pid)}, which is closed that day`;
     else if (unavailable) problem = `marks them working although they are on ${unavailable}`;
 
@@ -1069,6 +1100,9 @@ const allocateWeeklyOffs = (ctx, grid, counts, issues) => {
           Math.max(0, left - MAX_CONSECUTIVE_WORKING_DAYS) +
           (hasLaterFullWeek ? 0 : Math.max(0, right - MAX_CONSECUTIVE_WORKING_DAYS));
         const preferred = ctx.isPreferredOff(chosen, ctx.weekdays[index]) ? 0 : 1;
+        const adjacentRest = (index === 0 && ctx.priorRestDay.get(chosen)) ||
+          (index > 0 && isRestDay(ctx, chosen, cells[index - 1], index - 1)) ||
+          (index + 1 < cells.length && isRestDay(ctx, chosen, cells[index + 1], index + 1)) ? 1 : 0;
         const spare = removalShortage(ctx, counts, cells[index], index).minSpare;
         let colleaguesOff = 0;
         for (const other of sharesBrand.get(chosen)) {
@@ -1076,7 +1110,7 @@ const allocateWeeklyOffs = (ctx, grid, counts, issues) => {
           if (otherCell.status === "WEEKLY_OFF") colleaguesOff += 1;
         }
         // (a) run <= 6, (b) preferred, (c) latest, (d) spare, (e) colleagues off, (f) earliest
-        return [runPenalty, preferred, -index, -spare, colleaguesOff, index];
+        return [runPenalty, adjacentRest, preferred, -index, -spare, colleaguesOff, index];
       };
 
       const best = chosenDays
@@ -1154,8 +1188,15 @@ const repairLongRuns = (ctx, grid, counts, issues, extraWeeklyOffs) => {
     const flagged = new Set();
 
     for (let guard = 0; guard < ctx.dates.length * 2; guard += 1) {
-      const run = findWorkingRuns(cells).find((r) => !flagged.has(`${r.start}|${r.end}`));
+      const priorCount = ctx.priorWorkingRun.get(employeeId) || 0;
+      const run = findWorkingRuns(cells, 1).find((r) =>
+        !flagged.has(`${r.start}|${r.end}`) &&
+        r.length + (r.start === 0 ? priorCount : 0) > MAX_CONSECUTIVE_WORKING_DAYS
+      );
       if (!run) break;
+      const priorRun = run.start === 0 ? priorCount : 0;
+      const effectiveRunLength = priorRun + run.length;
+      const effectiveRunStart = priorRun ? (ctx.priorWorkingRunStart.get(employeeId) || ctx.dates[run.start]) : ctx.dates[run.start];
 
       const options = [];
       for (let index = run.start; index <= run.end; index += 1) {
@@ -1173,11 +1214,16 @@ const week = ctx.weeks.find((w) => w.dates.includes(ctx.dates[index]));
 const weekIndices = week ? week.dates.map((d) => ctx.dateIndex.get(d)) : [];
 const doublesFullWeek =
   week && week.isFull && weekIndices.some((i) => i !== index && isRestDay(ctx, employeeId, cells[i], i)) ? 1 : 0;
+const adjacentRest =
+  (index === 0 && ctx.priorRestDay.get(employeeId)) ||
+  (index > 0 && isRestDay(ctx, employeeId, cells[index - 1], index - 1)) ||
+  (index + 1 < cells.length && isRestDay(ctx, employeeId, cells[index + 1], index + 1)) ? 1 : 0;
 options.push({
   index,
   key: [
     fixesRun,
     doublesFullWeek,
+    adjacentRest,
     Math.max(left, right),
     ctx.isPreferredOff(employeeId, ctx.weekdays[index]) ? 0 : 1,
     -result.minSpare,
@@ -1201,11 +1247,11 @@ options.push({
             date: ctx.dates[run.start],
             process: blockingList[0] || null,
             employee: employeeId,
-            runStart: ctx.dates[run.start],
+            runStart: effectiveRunStart,
             runEnd: ctx.dates[run.end],
-            runLength: run.length,
+            runLength: effectiveRunLength,
             blockingProcesses: blockingList.map((pid) => ({ process: pid, label: processLabel(ctx, pid) })),
-            message: `${ctx.employeeName(employeeId)} works ${run.length} consecutive days (${ctx.dates[run.start]} to ${ctx.dates[run.end]}), more than the maximum of ${MAX_CONSECUTIVE_WORKING_DAYS}. No day in that run can be given off without breaking coverage${blockingList.length ? ` for ${listNames(blockingList.map((pid) => processLabel(ctx, pid)))}` : " (days are locked by manual entries)"}.`,
+            message: `${ctx.employeeName(employeeId)} works ${effectiveRunLength} consecutive days (${effectiveRunStart} to ${ctx.dates[run.end]}), more than the maximum of ${MAX_CONSECUTIVE_WORKING_DAYS}. No day in that run can be given off without breaking coverage${blockingList.length ? ` for ${listNames(blockingList.map((pid) => processLabel(ctx, pid)))}` : " (days are locked by manual entries)"}.`,
           })
         );
         continue;
@@ -1222,7 +1268,7 @@ options.push({
         employee: employeeId,
         employeeName: ctx.employeeName(employeeId),
         date: ctx.dates[index],
-        reason: `Extra weekly off added to break a run of ${run.length} consecutive working days (${ctx.dates[run.start]} to ${ctx.dates[run.end]}).`,
+        reason: `Extra weekly off added to break a run of ${effectiveRunLength} consecutive working days (${effectiveRunStart} to ${ctx.dates[run.end]}).`,
       });
     }
   }
@@ -1610,6 +1656,32 @@ export const generateRosterPlan = (input, { includeViews = true } = {}) => {
     ...generationIssues,
     ...detectPreferredOffUsed(ctx, grid, STAGE.GENERATION),
   ];
+  // Surface adjacent rest days (fixed/preferred/holiday/leave) for human review.
+  for (const employeeId of ctx.activeEmployeeIds) {
+    const cells = grid.get(employeeId);
+    if (cells.length && ctx.priorRestDay.get(employeeId) && isRestDay(ctx, employeeId, cells[0], 0)) {
+      issues.push(makeIssue(ctx, {
+        type: "CONSECUTIVE_REST_DAYS",
+        severity: SEVERITY.WARNING,
+        category: CATEGORY.WELLBEING,
+        date: ctx.dates[0],
+        employee: employeeId,
+        message: `${ctx.employeeName(employeeId)} has a rest day immediately before ${ctx.dates[0]} and another on ${ctx.dates[0]}. Review whether this is intentional.`,
+      }));
+    }
+    for (let index = 1; index < cells.length; index += 1) {
+      if (isRestDay(ctx, employeeId, cells[index - 1], index - 1) && isRestDay(ctx, employeeId, cells[index], index)) {
+        issues.push(makeIssue(ctx, {
+          type: "CONSECUTIVE_REST_DAYS",
+          severity: SEVERITY.WARNING,
+          category: CATEGORY.WELLBEING,
+          date: ctx.dates[index],
+          employee: employeeId,
+          message: `${ctx.employeeName(employeeId)} has consecutive rest days on ${ctx.dates[index - 1]} and ${ctx.dates[index]}. Review whether this is intentional.`,
+        }));
+      }
+    }
+  }
 
   for (const employeeId of ctx.activeEmployeeIds) {
     if (ctx.processesOf(employeeId).length) continue;
@@ -1783,12 +1855,18 @@ export const validateRosterPlan = (input, { includeViews = false } = {}) => {
       const weekday = ctx.weekdays[index];
       const leave = ctx.leaveOn(employeeId, index);
       const fixedOff = ctx.isFixedOff(employeeId, weekday);
-      const rawIds = (entry.processes || []).map(toId).filter(Boolean);
+      const permanentRawIds = (entry.processes || []).map(toId).filter(Boolean);
+      const temporaryRawIds = (entry.temporaryProcesses || []).map(toId).filter(Boolean);
+      const rawIds = [...permanentRawIds, ...temporaryRawIds];
+      const temporarySet = new Set(temporaryRawIds);
       const unique = uniqueSorted(rawIds);
       const anyAssignedOpen = assigned.some((pid) => ctx.operating.get(pid)[index]);
 
       if (unique.length !== rawIds.length) {
         issues.push(issue({ type: "DUPLICATE_PROCESS", date, employee: employeeId, message: `${name} has the same process listed more than once on ${date}.` }));
+      }
+      if (temporaryRawIds.some((pid) => !ctx.processMap.has(pid))) {
+        issues.push(issue({ type: "TEMPORARY_PROCESS_NOT_FOUND", date, employee: employeeId, message: `${name} has a temporary allocation to a process that does not exist on ${date}.` }));
       }
       if (entry.status === "WORKING" && unique.length === 0) {
         issues.push(issue({ type: "WORKING_WITHOUT_PROCESS", date, employee: employeeId, message: `${name} is marked WORKING on ${date} but has no process.` }));
@@ -1874,14 +1952,14 @@ export const validateRosterPlan = (input, { includeViews = false } = {}) => {
           continue;
         }
         if (entry.status !== "WORKING") continue;
-        if (!ctx.isAssigned(employeeId, pid)) {
+        if (!ctx.isAssigned(employeeId, pid) && !temporarySet.has(pid)) {
           issues.push(
             issue({
               type: "UNAUTHORISED_PROCESS_ASSIGNMENT",
               date,
               process: pid,
               employee: employeeId,
-              message: `${name} works ${processLabel(ctx, pid)} on ${date} but is not assigned to it. Create an assignment to authorise this cover.`,
+              message: `${name} works ${processLabel(ctx, pid)} on ${date} but has neither a permanent assignment nor a date-specific temporary allocation.`,
             })
           );
           continue;
@@ -1914,7 +1992,11 @@ export const validateRosterPlan = (input, { includeViews = false } = {}) => {
   // Rest-day checks (warnings, never block publishing).
   for (const employeeId of ctx.activeEmployeeIds) {
     const cells = grid.get(employeeId);
-    for (const run of findWorkingRuns(cells)) {
+    for (const run of findWorkingRuns(cells, 1)) {
+      const priorRun = run.start === 0 ? (ctx.priorWorkingRun.get(employeeId) || 0) : 0;
+      const effectiveRunLength = priorRun + run.length;
+      const effectiveRunStart = priorRun ? (ctx.priorWorkingRunStart.get(employeeId) || ctx.dates[run.start]) : ctx.dates[run.start];
+      if (effectiveRunLength <= MAX_CONSECUTIVE_WORKING_DAYS) continue;
       issues.push(
         makeIssue(ctx, {
           type: "MAX_CONSECUTIVE_DAYS_EXCEEDED",
@@ -1923,12 +2005,36 @@ export const validateRosterPlan = (input, { includeViews = false } = {}) => {
           stage: STAGE.VALIDATION,
           date: ctx.dates[run.start],
           employee: employeeId,
-          runStart: ctx.dates[run.start],
+          runStart: effectiveRunStart,
           runEnd: ctx.dates[run.end],
-          runLength: run.length,
-          message: `${ctx.employeeName(employeeId)} works ${run.length} consecutive days (${ctx.dates[run.start]} to ${ctx.dates[run.end]}), more than the maximum of ${MAX_CONSECUTIVE_WORKING_DAYS}.`,
+          runLength: effectiveRunLength,
+          message: `${ctx.employeeName(employeeId)} works ${effectiveRunLength} consecutive days (${effectiveRunStart} to ${ctx.dates[run.end]}), more than the maximum of ${MAX_CONSECUTIVE_WORKING_DAYS}.`,
         })
       );
+    }
+    if (cells.length && ctx.priorRestDay.get(employeeId) && isRestDay(ctx, employeeId, cells[0], 0)) {
+      issues.push(makeIssue(ctx, {
+        type: "CONSECUTIVE_REST_DAYS",
+        severity: SEVERITY.WARNING,
+        category: CATEGORY.WELLBEING,
+        stage: STAGE.VALIDATION,
+        date: ctx.dates[0],
+        employee: employeeId,
+        message: `${ctx.employeeName(employeeId)} has a rest day immediately before ${ctx.dates[0]} and another on ${ctx.dates[0]}. Review whether this is intentional.`,
+      }));
+    }
+    for (let index = 1; index < cells.length; index += 1) {
+      if (isRestDay(ctx, employeeId, cells[index - 1], index - 1) && isRestDay(ctx, employeeId, cells[index], index)) {
+        issues.push(makeIssue(ctx, {
+          type: "CONSECUTIVE_REST_DAYS",
+          severity: SEVERITY.WARNING,
+          category: CATEGORY.WELLBEING,
+          stage: STAGE.VALIDATION,
+          date: ctx.dates[index],
+          employee: employeeId,
+          message: `${ctx.employeeName(employeeId)} has consecutive rest days on ${ctx.dates[index - 1]} and ${ctx.dates[index]}. Review whether this is intentional.`,
+        }));
+      }
     }
     for (const week of ctx.fullWeeks) {
       const allWorking = week.dates.every((date) => isWorking(cells[ctx.dateIndex.get(date)]));
