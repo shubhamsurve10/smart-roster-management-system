@@ -176,29 +176,25 @@ function LeavesPage() {
         },
       ]}
       rowActions={(r, reload) =>
-        r.status === "PENDING" ? (
-          <div className="inline-flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() =>
-                reviewRequest(r._id, "APPROVED", reload)
-              }
-            >
-              Approve
-            </Button>
+  isAdmin && r.status === "PENDING" ? (
+    <div className="inline-flex items-center gap-2">
+      <Button
+        size="sm"
+        onClick={() => reviewRequest(r._id, "APPROVED", reload)}
+      >
+        Approve
+      </Button>
 
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() =>
-                reviewRequest(r._id, "REJECTED", reload)
-              }
-            >
-              Reject
-            </Button>
-          </div>
-        ) : null
-      }
+      <Button
+        size="sm"
+        variant="destructive"
+        onClick={() => reviewRequest(r._id, "REJECTED", reload)}
+      >
+        Reject
+      </Button>
+    </div>
+  ) : null
+}
     />
   );
 }

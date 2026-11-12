@@ -15,7 +15,7 @@ export function canVisit(role: Role, path: string) {
 
   const allowed =
     role === "pod_lead"
-      ? ["/roster", "/pods", "/employees", "/holidays"]
+      ? ["/roster", "/pods", "/employees", "/weekly-off-rules", "/leaves"]
       : ["/roster", "/weekly-off-rules", "/holidays", "/leaves"];
 
   return allowed.includes(path);
@@ -67,3 +67,4 @@ export function ownsEmployee(
     ref(employee.user) === user.id
   );
 }
+  

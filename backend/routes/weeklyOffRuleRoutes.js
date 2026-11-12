@@ -15,8 +15,6 @@ import {
 
 const router = express.Router();
 
-// All roles can view rules.
-// Controller filters the results according to the user's role.
 router.get(
   "/",
   protect,
@@ -24,14 +22,24 @@ router.get(
   getWeeklyOffRules
 );
 
-// Only Admin can modify weekly-off rules
+// Admin and Pod Lead can add rules.
+// Backend restricts Pod Leads to PREFERRED rules for their own pod.
 router.post(
   "/",
   protect,
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "pod_lead"),
   createWeeklyOffRule
 );
 
+// Only Admin can update or delete rules.
+router.put(
+  "/:id",
+  protect,
+  authorizeRoles("admin"),
+  updateWeeklyOffRule
+);
+
+// PATCH compatibility with the existing frontend CrudPage.
 router.patch(
   "/:id",
   protect,
